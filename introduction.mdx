@@ -1,0 +1,75 @@
+---
+title: Introduction
+description: A lightweight Express microservice that generates institutional document templates using Groq's LLM API for Mexican government entities.
+---
+
+# Welcome to Groq Microservice
+
+Groq Microservice is a specialized API service that leverages Groq's powerful LLM API to generate institutional document templates tailored for Mexican government entities (Ayuntamientos). The service automates the creation of formal administrative documents with proper formatting, structure, and variable placeholders.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="AI-Powered Generation" icon="wand-magic-sparkles">
+    Uses Groq's LLM API with Llama models to generate contextually appropriate institutional documents
+  </Card>
+  <Card title="RESTful API" icon="code">
+    Simple HTTP endpoint for easy integration with existing government systems
+  </Card>
+  <Card title="Variable Placeholders" icon="brackets-curly">
+    Automatically generates templates with `{{Variable}}` placeholders for dynamic content
+  </Card>
+  <Card title="Area-Specific Customization" icon="building">
+    Tailors document structure and content based on the government department or area
+  </Card>
+</CardGroup>
+
+## What You'll Find Here
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get the microservice running in minutes with our step-by-step guide
+  </Card>
+  <Card title="Setup Guide" icon="wrench" href="/guides/setup">
+    Detailed installation and configuration instructions
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/overview">
+    Complete documentation of the template generation endpoint
+  </Card>
+  <Card title="Deployment" icon="cloud-upload" href="/guides/deployment">
+    Deploy to production environments with confidence
+  </Card>
+</CardGroup>
+
+## How It Works
+
+The microservice accepts a natural language prompt describing the type of institutional document needed, along with an optional department area. It then:
+
+1. Processes the request through a specialized system prompt designed for Mexican institutional writing
+2. Sends the formatted prompt to Groq's API using the Llama 3.1 8B Instant model
+3. Returns a properly structured document template with variable placeholders
+4. Includes all required elements: institutional header, ASUNTO, date/location, body, closing, signature block, and carbon copy (C.c.p.) sections
+
+<Info>
+  The service is optimized for speed and cost-efficiency using the Llama 3.1 8B Instant model, with support for the more powerful Llama 3.3 70B Versatile model when needed.
+</Info>
+
+## Use Cases
+
+- **Administrative Communications**: Generate official memos, notices, and communications
+- **Form Letters**: Create standardized letters for citizen services
+- **Internal Documents**: Produce interdepartmental documentation with proper formatting
+- **Template Libraries**: Build reusable document templates for common scenarios
+
+## Technology Stack
+
+- **Runtime**: Node.js with Express 5
+- **AI Provider**: Groq API with Llama models
+- **Configuration**: Environment-based with dotenv
+- **CORS**: Enabled for cross-origin integration
+
+## Ready to Get Started?
+
+<Card title="Quick Start Guide" icon="play" href="/quickstart">
+  Follow our quickstart guide to get your first template generated in under 5 minutes
+</Card>

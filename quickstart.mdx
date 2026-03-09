@@ -1,80 +1,246 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart'
+description: 'Get started with the Groq Microservice in under 5 minutes'
+icon: 'rocket'
 ---
 
-## Get started in three steps
+Get your Groq-powered document template generator running locally in minutes. This guide will walk you through installation, configuration, and making your first API request.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- **Node.js** 18 or higher installed
+- A **Groq API key** (get one free at [console.groq.com](https://console.groq.com))
 
-### Step 2: Deploy your changes
+<Steps>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+<Step title="Clone and Install Dependencies">
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+First, clone the repository and install the required dependencies:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+<CodeGroup>
 
-### Step 3: Go live
+```bash npm
+npm install
+```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+```bash yarn
+yarn install
+```
 
-## Next steps
+```bash pnpm
+pnpm install
+```
 
-Now that you have your docs running, explore these key features:
+</CodeGroup>
+
+The service uses three main dependencies:
+- `express` - Web framework for the API server
+- `cors` - Cross-origin resource sharing middleware
+- `dotenv` - Environment variable management
+
+</Step>
+
+<Step title="Configure Environment Variables">
+
+Create a `.env` file in the project root with your Groq API key:
+
+```bash .env
+GROQ_API_KEY=your_groq_api_key_here
+PORT=5055
+```
+
+<Info>
+  The `PORT` variable is optional and defaults to `5055` if not specified.
+</Info>
+
+<Warning>
+  Never commit your `.env` file to version control. Your Groq API key should remain secret.
+</Warning>
+
+</Step>
+
+<Step title="Start the Server">
+
+Launch the development server:
+
+<CodeGroup>
+
+```bash npm
+npm run dev
+```
+
+```bash yarn
+yarn dev
+```
+
+```bash Production
+npm start
+```
+
+</CodeGroup>
+
+You should see:
+
+```
+Groq micro corriendo en http://localhost:5055
+```
+
+The service is now running and ready to accept requests!
+
+</Step>
+
+<Step title="Make Your First API Request">
+
+Test the service by generating a document template. The API endpoint is:
+
+```
+POST /api/generate-template
+```
+
+Here's a complete example using curl:
+
+```bash curl
+curl -X POST http://localhost:5055/api/generate-template \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Crear un oficio para solicitar material de oficina",
+    "area": "Recursos Humanos"
+  }'
+```
+
+<Tip>
+  The `area` field is optional but helps provide context for better template generation.
+</Tip>
+
+</Step>
+
+<Step title="Understanding the Response">
+
+The API returns a JSON response with the generated template:
+
+```json Response
+{
+  "text": "AYUNTAMIENTO MUNICIPAL\n\nASUNTO: Solicitud de Material de Oficina\n\n{{Lugar}}, {{Fecha}}\n\n{{Destinatario}}\n{{Cargo}}\nPresente\n\nPor medio del presente, el Departamento de {{Area}} solicita de su amable apoyo para la requisición del siguiente material de oficina:\n\n{{ListaMateriales}}\n\nLo anterior con el fin de continuar con las actividades cotidianas del departamento de manera eficiente.\n\nAgradeciendo de antemano su atención y apoyo, quedo de usted.\n\nATENTAMENTE\n\n{{Nombre}}\n{{Cargo}}\nDepartamento de {{Area}}\n\nC.c.p. {{CopiaConocimiento}}"
+}
+```
+
+The generated template includes:
+- **Institutional header** with municipality information
+- **Subject line** (ASUNTO) describing the document purpose
+- **Place and date** variables in `{{Variable}}` format
+- **Body content** with relevant context and requirements
+- **Formal closing** with signature block
+- **Carbon copy** (C.c.p.) section for distribution
+
+</Step>
+
+</Steps>
+
+## Request Parameters
+
+The `/api/generate-template` endpoint accepts the following JSON body parameters:
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prompt` | string | Yes | Description of the document template you want to generate (in Spanish) |
+| `area` | string | No | The department or area requesting the document (e.g., "Recursos Humanos", "Finanzas") |
+
+## Example Use Cases
 
 <CardGroup cols={2}>
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
+<Card title="Office Supply Request" icon="box">
+```json
+{
+  "prompt": "Oficio para solicitar papelería",
+  "area": "Administración"
+}
+```
 </Card>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
+<Card title="Meeting Invitation" icon="calendar">
+```json
+{
+  "prompt": "Invitación a reunión de cabildo",
+  "area": "Secretaría"
+}
+```
 </Card>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
+<Card title="Authorization Letter" icon="file-signature">
+```json
+{
+  "prompt": "Carta de autorización para evento público",
+  "area": "Eventos Especiales"
+}
+```
 </Card>
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
+<Card title="Budget Request" icon="dollar-sign">
+```json
+{
+  "prompt": "Solicitud de presupuesto para proyecto",
+  "area": "Finanzas"
+}
+```
 </Card>
 
 </CardGroup>
 
+## Variable Format
+
+All generated templates use the `{{Variable}}` format with double curly braces. This format is compatible with most template engines and makes it easy to identify fields that need to be filled in:
+
+- `{{Lugar}}` - Municipality or location
+- `{{Fecha}}` - Date
+- `{{Destinatario}}` - Recipient name
+- `{{Cargo}}` - Position/title
+- `{{Area}}` - Department name
+- Custom variables based on your prompt
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  The service is configured to only return template text without explanations. You receive clean, ready-to-use document templates.
 </Note>
+
+## Error Handling
+
+The API returns appropriate HTTP status codes:
+
+| Status Code | Description |
+|-------------|-------------|
+| `200` | Success - template generated |
+| `400` | Bad request - missing or invalid `prompt` parameter |
+| `500` | Server error - internal processing error |
+| `502` | Bad gateway - Groq API error |
+
+Example error response:
+
+```json Error Response
+{
+  "error": "prompt es requerido"
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="API Reference" icon="code" href="/api/generate-template">
+  Explore detailed API documentation and advanced options
+</Card>
+
+<Card title="Configuration" icon="gear" href="/guides/configuration">
+  Learn about customization and configuration options
+</Card>
+
+<Card title="Deployment" icon="cloud" href="/guides/deployment">
+  Deploy your service to production
+</Card>
+
+<Card title="Setup Guide" icon="wrench" href="/guides/setup">
+  Complete setup and installation guide
+</Card>
+
+</CardGroup>

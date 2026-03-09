@@ -1,0 +1,273 @@
+---
+title: 'Setup Guide'
+description: 'Complete installation and setup instructions for the Groq Microservice'
+---
+
+## Overview
+
+This guide will walk you through setting up the Groq Microservice on your local development environment. The service is built with Node.js and Express, using Groq's LLM API to generate institutional document templates for Mexican government entities.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed on your system:
+
+<Steps>
+  <Step title="Node.js and npm">
+    The Groq Microservice requires Node.js version **18.x or higher**. We recommend using the latest LTS version.
+
+    Check your Node.js version:
+    ```bash
+    node --version
+    ```
+
+    If you need to install or update Node.js, download it from [nodejs.org](https://nodejs.org/) or use a version manager like [nvm](https://github.com/nvm-sh/nvm).
+
+    <Info>
+      Using nvm? Run `nvm install --lts` to get the latest LTS version.
+    </Info>
+  </Step>
+
+  <Step title="Groq API Key">
+    You'll need a valid Groq API key to use this service. Sign up for a free account at [console.groq.com](https://console.groq.com/) to obtain your API key.
+
+    <Warning>
+      Keep your API key secure and never commit it to version control.
+    </Warning>
+  </Step>
+
+  <Step title="Git (Optional)">
+    If you're cloning the repository from version control, ensure Git is installed:
+    ```bash
+    git --version
+    ```
+  </Step>
+</Steps>
+
+## Installation
+
+<Steps>
+  <Step title="Clone or Download the Project">
+    If using Git, clone the repository:
+    ```bash
+    git clone <repository-url>
+    cd grok-micro
+    ```
+
+    Or download and extract the source code to your preferred directory.
+  </Step>
+
+  <Step title="Install Dependencies">
+    Navigate to the project directory and install all required npm packages:
+
+    ```bash
+    npm install
+    ```
+
+    This will install the following dependencies:
+    - **express** (v5.2.1) - Web application framework
+    - **cors** (v2.8.6) - Cross-Origin Resource Sharing middleware
+    - **dotenv** (v17.2.4) - Environment variable management
+
+    And development dependencies:
+    - **nodemon** (v3.1.11) - Auto-restart server during development
+
+    <Tip>
+      The installation typically takes 30-60 seconds depending on your internet connection.
+    </Tip>
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Create a `.env` file in the project root directory:
+
+    ```bash
+    touch .env
+    ```
+
+    Add your configuration to the `.env` file:
+
+    ```bash .env
+    GROQ_API_KEY=your_api_key_here
+    PORT=5055
+    ```
+
+    <Warning>
+      Replace `your_api_key_here` with your actual Groq API key from the console.
+    </Warning>
+
+    <AccordionGroup>
+      <Accordion title="Environment Variable Details">
+        - **GROQ_API_KEY** (required): Your Groq API authentication key
+        - **PORT** (optional): Server port, defaults to 5055 if not specified
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+
+  <Step title="Verify Installation">
+    Test that everything is set up correctly by starting the development server:
+
+    ```bash
+    npm run dev
+    ```
+
+    You should see:
+    ```
+    Groq micro corriendo en http://localhost:5055
+    ```
+
+    <Info>
+      The `dev` script uses nodemon, which automatically restarts the server when you make code changes.
+    </Info>
+  </Step>
+</Steps>
+
+## Project Structure
+
+After installation, your project structure should look like this:
+
+```
+grok-micro/
+├── node_modules/        # Installed dependencies (auto-generated)
+├── .env                 # Environment variables (you create this)
+├── .env.example         # Environment template
+├── .gitignore           # Git ignore rules
+├── package.json         # Project metadata and dependencies
+├── package-lock.json    # Locked dependency versions
+└── server.js           # Main application file
+```
+
+## Testing Your Setup
+
+Once the server is running, test the API endpoint:
+
+<CodeGroup>
+```bash cURL
+curl -X POST http://localhost:5055/api/generate-template \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Oficio para solicitar papelería",
+    "area": "Recursos Humanos"
+  }'
+```
+
+```javascript JavaScript (fetch)
+fetch('http://localhost:5055/api/generate-template', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    prompt: 'Oficio para solicitar papelería',
+    area: 'Recursos Humanos'
+  })
+})
+.then(res => res.json())
+.then(data => console.log(data.text));
+```
+
+```python Python (requests)
+import requests
+
+response = requests.post(
+    'http://localhost:5055/api/generate-template',
+    json={
+        'prompt': 'Oficio para solicitar papelería',
+        'area': 'Recursos Humanos'
+    }
+)
+
+print(response.json()['text'])
+```
+</CodeGroup>
+
+A successful response will contain the generated template text:
+
+```json
+{
+  "text": "[Generated institutional document template]"
+}
+```
+
+## Available Scripts
+
+The project includes the following npm scripts:
+
+<AccordionGroup>
+  <Accordion title="npm run dev">
+    Starts the development server with nodemon for auto-reloading:
+    ```bash
+    npm run dev
+    ```
+    Use this during development when you're actively making changes to the code.
+  </Accordion>
+
+  <Accordion title="npm start">
+    Starts the production server without auto-reloading:
+    ```bash
+    npm start
+    ```
+    Use this for production deployments or when auto-restart is not needed.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Port Already in Use">
+    If you see an error about port 5055 being in use:
+
+    1. Change the PORT in your `.env` file:
+       ```bash
+       PORT=5056
+       ```
+    
+    2. Or kill the process using port 5055:
+       ```bash
+       # On Linux/Mac
+       lsof -ti:5055 | xargs kill -9
+       
+       # On Windows
+       netstat -ano | findstr :5055
+       taskkill /PID <PID> /F
+       ```
+  </Accordion>
+
+  <Accordion title="Missing GROQ_API_KEY">
+    If the server starts but API calls fail, verify:
+
+    1. Your `.env` file exists in the project root
+    2. The `GROQ_API_KEY` variable is set
+    3. There are no extra spaces or quotes around the key
+    4. The key is valid in the Groq console
+  </Accordion>
+
+  <Accordion title="Module Not Found Errors">
+    If you see `Cannot find module` errors:
+
+    ```bash
+    # Delete node_modules and package-lock.json
+    rm -rf node_modules package-lock.json
+    
+    # Reinstall dependencies
+    npm install
+    ```
+  </Accordion>
+
+  <Accordion title="ES Modules Issues">
+    This project uses ES modules (import/export). Ensure your Node.js version is 18+. If you need to use CommonJS:
+
+    1. Remove `"type": "module"` from package.json (if present)
+    2. Change imports to require statements in server.js
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+Now that your development environment is set up:
+
+1. Read the [Configuration Guide](/guides/configuration) to learn about customizing the system prompt and settings
+2. Explore the [Deployment Guide](/guides/deployment) when you're ready to deploy to production
+3. Check the [API Reference](/api/generate-template) for detailed endpoint documentation
+
+<Note>
+  Remember to restart the server after making changes to the `.env` file or `server.js`.
+</Note>

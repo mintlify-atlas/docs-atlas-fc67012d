@@ -1,0 +1,48 @@
+---
+title: 'API Overview'
+description: 'REST API for generating institutional document templates'
+---
+
+## Introduction
+
+The Groq Microservice provides a REST API for generating Mexican government institutional document templates using Groq's LLM API. The service generates properly formatted official documents (machotes) with standardized elements and variable placeholders.
+
+## Base URL
+
+```
+http://localhost:5055
+```
+
+The default port is `5055`, but can be configured via the `PORT` environment variable.
+
+## Authentication
+
+The API does not require authentication from clients. However, the server requires a valid `GROQ_API_KEY` environment variable to communicate with Groq's API.
+
+Clients can make requests directly without providing any authentication headers.
+
+## Content Type
+
+All requests must use:
+
+```
+Content-Type: application/json
+```
+
+## Request/Response Format
+
+- **Request**: JSON body with required parameters
+- **Response**: JSON object containing the generated template or error details
+- **Request size limit**: 1MB
+
+## Available Endpoints
+
+The API currently provides one endpoint:
+
+- `POST /api/generate-template` - Generate an institutional document template
+
+See the [Generate Template](/api/generate-template) endpoint documentation for details.
+
+## CORS
+
+CORS is enabled for all origins, allowing the API to be consumed by web applications from any domain.

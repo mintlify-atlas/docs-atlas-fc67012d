@@ -1,0 +1,487 @@
+---
+title: 'Rate Limits'
+description: 'Understanding and managing API rate limits for the Groq Microservice'
+---
+
+## Overview
+
+The Groq Microservice does not implement rate limiting at the application level. Instead, it inherits rate limits directly from the underlying Groq API. Understanding these limits is crucial for production deployments.
+
+<Warning>
+Without application-level rate limiting, your microservice will pass through all requests to Groq's API until you hit their rate limits, which can result in 502 errors for end users.
+</Warning>
+
+## Groq API Rate Limits
+
+The Groq Microservice uses the Groq API (`https://api.groq.com/openai/v1/chat/completions`) which has its own rate limiting policies:
+
+<Info>
+**Current Model:** The service uses `llama-3.1-8b-instant` by default (see `server.js:37`).
+
+Rate limits vary by model and account tier. Check your specific limits in the [Groq Console](https://console.groq.com/settings/limits).
+</Info>
+
+### Typical Rate Limit Parameters
+
+Groq enforces rate limits based on:
+
+- **Requests per minute (RPM):** Maximum number of API calls per minute
+- **Tokens per minute (TPM):** Maximum number of tokens processed per minute
+- **Requests per day (RPD):** Daily quota for API requests
+
+### When Rate Limits Are Exceeded
+
+When you exceed Groq's rate limits:
+
+1. Groq API returns an error response (typically HTTP 429)
+2. The microservice catches this as a non-OK response (`server.js:43`)
+3. Returns a 502 error with Groq's error details:
+
+```json
+{
+  "error": "Groq error",
+  "details": "Rate limit exceeded. Please try again later."
+}
+```
+
+<Note>
+Refer to the [Error Handling](/api/error-handling) page for more details on handling 502 errors.
+</Note>
+
+## Recommended Rate Limiting Strategy
+
+For production deployments, implement rate limiting at the microservice level to:
+
+- Prevent overwhelming Groq's API
+- Provide better error messages to clients
+- Implement fair usage policies across multiple users
+- Cache responses when appropriate
+
+### Implementation Options
+
+<AccordionGroup>
+  <Accordion title="Express Rate Limit Middleware">
+    Use the popular `express-rate-limit` package to add request throttling:
+
+    **Installation:**
+    ```bash
+    npm install express-rate-limit
+    ```
+
+    **Implementation:**
+    ```javascript
+    import express from "express";
+    import cors from "cors";
+    import rateLimit from "express-rate-limit";
+    import "dotenv/config";
+
+    const app = express();
+    app.use(cors());
+    app.use(express.json({ limit: "1mb" }));
+
+    // Configure rate limiter
+    const limiter = rateLimit({
+      windowMs: 60 * 1000, // 1 minute window
+      max: 10, // Limit to 10 requests per minute
+      message: {
+        error: "Demasiadas solicitudes",
+        details: "Por favor, espera un momento antes de intentar nuevamente"
+      },
+      standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+      legacyHeaders: false, // Disable `X-RateLimit-*` headers
+    });
+
+    // Apply to all requests
+    app.use('/api/', limiter);
+
+    // Your existing endpoint
+    app.post("/api/generate-template", async (req, res) => {
+      // ... existing code
+    });
+    ```
+
+    **Response when rate limited:**
+    ```json
+    {
+      "error": "Demasiadas solicitudes",
+      "details": "Por favor, espera un momento antes de intentar nuevamente"
+    }
+    ```
+
+    **Response headers:**
+    ```
+    RateLimit-Limit: 10
+    RateLimit-Remaining: 0
+    RateLimit-Reset: 1678901234
+    ```
+  </Accordion>
+
+  <Accordion title="Redis-Based Rate Limiting">
+    For distributed deployments with multiple service instances, use Redis for shared rate limiting:
+
+    **Installation:**
+    ```bash
+    npm install express-rate-limit rate-limit-redis ioredis
+    ```
+
+    **Implementation:**
+    ```javascript
+    import express from "express";
+    import rateLimit from "express-rate-limit";
+    import RedisStore from "rate-limit-redis";
+    import Redis from "ioredis";
+    import "dotenv/config";
+
+    const app = express();
+    app.use(express.json({ limit: "1mb" }));
+
+    // Create Redis client
+    const redisClient = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: process.env.REDIS_PORT || 6379,
+      password: process.env.REDIS_PASSWORD,
+    });
+
+    // Configure rate limiter with Redis store
+    const limiter = rateLimit({
+      windowMs: 60 * 1000, // 1 minute
+      max: 10,
+      store: new RedisStore({
+        client: redisClient,
+        prefix: 'groq_rl:', // Key prefix in Redis
+      }),
+      message: {
+        error: "Límite de solicitudes excedido",
+        details: "Por favor, espera antes de hacer más solicitudes"
+      },
+    });
+
+    app.use('/api/', limiter);
+    ```
+
+    **Benefits:**
+    - Rate limits are shared across all service instances
+    - Scales horizontally
+    - Persistent rate limit data
+  </Accordion>
+
+  <Accordion title="Per-User Rate Limiting">
+    Implement different rate limits for different users or API keys:
+
+    **Implementation:**
+    ```javascript
+    import rateLimit from "express-rate-limit";
+
+    // User tier configuration
+    const RATE_LIMITS = {
+      free: { windowMs: 60 * 1000, max: 5 },
+      premium: { windowMs: 60 * 1000, max: 50 },
+      enterprise: { windowMs: 60 * 1000, max: 500 },
+    };
+
+    // Middleware to identify user tier
+    function getUserTier(req) {
+      const apiKey = req.headers['x-api-key'];
+      // Look up user tier from database or config
+      // This is a simplified example
+      if (!apiKey) return 'free';
+      // Query your database or config to get actual tier
+      return 'premium';
+    }
+
+    // Dynamic rate limiter
+    const dynamicLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: (req) => {
+        const tier = getUserTier(req);
+        return RATE_LIMITS[tier].max;
+      },
+      keyGenerator: (req) => {
+        // Use API key or IP address as key
+        return req.headers['x-api-key'] || req.ip;
+      },
+      message: (req) => {
+        const tier = getUserTier(req);
+        return {
+          error: "Límite de solicitudes excedido",
+          details: `Límite para plan ${tier}: ${RATE_LIMITS[tier].max} solicitudes por minuto`,
+          tier: tier,
+          upgradeUrl: "https://your-service.com/upgrade"
+        };
+      },
+    });
+
+    app.use('/api/', dynamicLimiter);
+    ```
+  </Accordion>
+
+  <Accordion title="Response Caching">
+    Reduce API calls by caching responses for identical requests:
+
+    **Installation:**
+    ```bash
+    npm install node-cache
+    ```
+
+    **Implementation:**
+    ```javascript
+    import NodeCache from "node-cache";
+    import crypto from "crypto";
+
+    // Create cache with 1 hour TTL
+    const cache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+
+    // Generate cache key from request
+    function getCacheKey(prompt, area) {
+      const content = JSON.stringify({ prompt, area });
+      return crypto.createHash('md5').update(content).digest('hex');
+    }
+
+    app.post("/api/generate-template", async (req, res) => {
+      try {
+        const { prompt, area } = req.body || {};
+        
+        if (!prompt || typeof prompt !== "string") {
+          return res.status(400).json({ error: "prompt es requerido" });
+        }
+
+        // Check cache
+        const cacheKey = getCacheKey(prompt, area);
+        const cachedResponse = cache.get(cacheKey);
+        
+        if (cachedResponse) {
+          return res.json({ 
+            text: cachedResponse,
+            cached: true // Optional: indicate response was cached
+          });
+        }
+
+        // ... existing Groq API call code ...
+        const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          // ... existing fetch config
+        });
+
+        if (!r.ok) {
+          const details = await r.text();
+          return res.status(502).json({ error: "Groq error", details });
+        }
+
+        const data = await r.json();
+        const text = data?.choices?.[0]?.message?.content?.trim() || "";
+        
+        // Store in cache
+        cache.set(cacheKey, text);
+        
+        return res.json({ text });
+      } catch (e) {
+        return res.status(500).json({ error: "server error", details: String(e) });
+      }
+    });
+    ```
+
+    <Warning>
+    Be cautious with caching LLM responses as they may vary slightly between calls even with the same prompt. Consider if this is appropriate for your use case.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring Rate Limit Usage
+
+### Track Groq API Usage
+
+Implement logging to monitor your Groq API consumption:
+
+```javascript
+import express from "express";
+import "dotenv/config";
+
+const app = express();
+app.use(express.json({ limit: "1mb" }));
+
+// Simple in-memory usage tracker
+const usageStats = {
+  requests: 0,
+  errors: 0,
+  rateLimitErrors: 0,
+  lastReset: Date.now()
+};
+
+// Reset stats every hour
+setInterval(() => {
+  console.log('[Usage Stats]', usageStats);
+  usageStats.requests = 0;
+  usageStats.errors = 0;
+  usageStats.rateLimitErrors = 0;
+  usageStats.lastReset = Date.now();
+}, 60 * 60 * 1000);
+
+app.post("/api/generate-template", async (req, res) => {
+  usageStats.requests++;
+  
+  try {
+    const { prompt, area } = req.body || {};
+    
+    if (!prompt || typeof prompt !== "string") {
+      return res.status(400).json({ error: "prompt es requerido" });
+    }
+
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      // ... existing config
+    });
+
+    if (!r.ok) {
+      usageStats.errors++;
+      
+      // Check if it's a rate limit error
+      if (r.status === 429) {
+        usageStats.rateLimitErrors++;
+        console.warn('[Rate Limit] Groq API rate limit exceeded');
+      }
+      
+      const details = await r.text();
+      return res.status(502).json({ error: "Groq error", details });
+    }
+
+    const data = await r.json();
+    const text = data?.choices?.[0]?.message?.content?.trim() || "";
+    return res.json({ text });
+  } catch (e) {
+    usageStats.errors++;
+    return res.status(500).json({ error: "server error", details: String(e) });
+  }
+});
+
+// Stats endpoint
+app.get("/api/stats", (req, res) => {
+  res.json({
+    ...usageStats,
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage()
+  });
+});
+```
+
+### Dashboard Integration
+
+For production systems, integrate with monitoring services:
+
+- **Application Performance Monitoring (APM):** New Relic, Datadog, Dynatrace
+- **Logging Services:** CloudWatch, Papertrail, Loggly
+- **Custom Dashboards:** Grafana with Prometheus metrics
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Set Conservative Limits">
+    Start with conservative rate limits and increase based on actual usage:
+
+    ```javascript
+    // Start with low limits
+    const limiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: 5, // Only 5 requests per minute initially
+    });
+
+    // Monitor and adjust based on:
+    // - Groq API limits for your account
+    // - Actual user demand
+    // - Error rates
+    // - Response times
+    ```
+  </Accordion>
+
+  <Accordion title="Provide Clear Error Messages">
+    Help users understand rate limits:
+
+    ```javascript
+    const limiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: 10,
+      message: {
+        error: "Límite de solicitudes excedido",
+        details: "Has alcanzado el límite de 10 solicitudes por minuto.",
+        retryAfter: "Espera 60 segundos antes de intentar nuevamente",
+        limit: 10,
+        window: "1 minuto"
+      },
+      standardHeaders: true, // Include rate limit headers
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Implement Graceful Degradation">
+    Handle rate limit errors gracefully:
+
+    ```javascript
+    // Client-side handling
+    async function generateTemplate(prompt, area) {
+      try {
+        const response = await fetch('/api/generate-template', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, area })
+        });
+
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After') || 60;
+          
+          // Queue the request for later
+          return {
+            queued: true,
+            message: `Solicitud en cola. Se procesará en ${retryAfter} segundos.`,
+            retryAfter
+          };
+        }
+
+        if (!response.ok) {
+          throw new Error('API error');
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error('Request failed:', error);
+        throw error;
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Testing Rate Limits
+
+Test your rate limiting implementation:
+
+```bash
+# Send 20 requests rapidly to test rate limiting
+for i in {1..20}; do
+  curl -X POST http://localhost:5055/api/generate-template \
+    -H "Content-Type: application/json" \
+    -d '{"prompt": "Test request '$i'"}' \
+    -w "\nStatus: %{http_code}\n" \
+    -s
+  sleep 0.1
+done
+```
+
+Expected behavior:
+- First N requests (based on your limit) should succeed (200 OK)
+- Subsequent requests should be rate limited (429 Too Many Requests)
+- After the time window, requests should succeed again
+
+## Additional Resources
+
+<Info>
+**Groq API Documentation:** [https://console.groq.com/docs/rate-limits](https://console.groq.com/docs/rate-limits)
+
+**Check your current limits:** [Groq Console - Limits](https://console.groq.com/settings/limits)
+</Info>
+
+### Related Documentation
+
+- [Error Handling](/api/error-handling) - Handle rate limit errors (502 responses)
+- [API Reference](/api/overview) - Complete API endpoint documentation
+- [Quick Start](/quickstart) - Set up and configure the service
+
+<Note>
+For enterprise deployments with high volume requirements, consider reaching out to Groq about increasing your rate limits or implementing a dedicated infrastructure setup.
+</Note>

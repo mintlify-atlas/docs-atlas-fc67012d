@@ -1,0 +1,339 @@
+---
+title: 'Error Handling'
+description: 'Understanding error responses and best practices for error handling'
+---
+
+## Error Response Format
+
+All errors returned by the Groq Microservice API follow a consistent JSON format:
+
+```json
+{
+  "error": "error_type",
+  "details": "additional_error_information"
+}
+```
+
+The `details` field is optional and provides additional context about the error when available.
+
+## HTTP Status Codes
+
+The API returns three types of error responses based on the failure scenario:
+
+### 400 Bad Request
+
+**Cause:** Missing or invalid `prompt` parameter in the request body.
+
+**When it occurs:**
+- The `prompt` field is not provided in the request body
+- The `prompt` field is not a string type
+- The `prompt` field is an empty string
+
+**Response Example:**
+
+```json
+{
+  "error": "prompt es requerido"
+}
+```
+
+<Note>
+The error message is in Spanish ("prompt es requerido") as this service is designed for Mexican government entities.
+</Note>
+
+**Source code reference:** `server.js:22`
+
+```javascript
+if (!prompt || typeof prompt !== "string") {
+  return res.status(400).json({ error: "prompt es requerido" });
+}
+```
+
+### 502 Bad Gateway
+
+**Cause:** The upstream Groq API request failed.
+
+**When it occurs:**
+- Groq API returns a non-2xx status code
+- Network connectivity issues to Groq's servers
+- Invalid API key configuration
+- Groq API service outages
+- Rate limit exceeded on Groq's side
+
+**Response Example:**
+
+```json
+{
+  "error": "Groq error",
+  "details": "Error message from Groq API"
+}
+```
+
+<Warning>
+The `details` field contains the raw error response from Groq's API, which may include sensitive information about API limits or authentication issues. Handle this information carefully in production environments.
+</Warning>
+
+**Source code reference:** `server.js:43-46`
+
+```javascript
+if (!r.ok) {
+  const details = await r.text();
+  return res.status(502).json({ error: "Groq error", details });
+}
+```
+
+### 500 Internal Server Error
+
+**Cause:** Unexpected server-side errors during request processing.
+
+**When it occurs:**
+- JavaScript runtime errors
+- Unexpected exceptions in the request handler
+- JSON parsing failures
+- Network errors during fetch operations
+
+**Response Example:**
+
+```json
+{
+  "error": "server error",
+  "details": "Error: [specific error message]"
+}
+```
+
+**Source code reference:** `server.js:51-53`
+
+```javascript
+catch (e) {
+  return res.status(500).json({ error: "server error", details: String(e) });
+}
+```
+
+<Info>
+The `details` field contains the stringified error object, which can help with debugging during development.
+</Info>
+
+## Error Handling Best Practices
+
+<AccordionGroup>
+  <Accordion title="Client-Side Error Handling">
+    Always implement proper error handling in your client application:
+
+    ```javascript
+    try {
+      const response = await fetch('http://localhost:5055/api/generate-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'Crear oficio de solicitud de información',
+          area: 'Recursos Humanos'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        switch (response.status) {
+          case 400:
+            console.error('Invalid request:', errorData.error);
+            // Show user-friendly message about missing/invalid prompt
+            break;
+          
+          case 502:
+            console.error('Groq API error:', errorData.details);
+            // Implement retry logic or fallback mechanism
+            break;
+          
+          case 500:
+            console.error('Server error:', errorData.details);
+            // Log error and show generic error message to user
+            break;
+          
+          default:
+            console.error('Unexpected error:', errorData);
+        }
+        
+        return;
+      }
+
+      const data = await response.json();
+      console.log('Generated template:', data.text);
+    } catch (error) {
+      console.error('Network error:', error);
+      // Handle network failures
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Retry Logic for 502 Errors">
+    Implement exponential backoff for Groq API failures:
+
+    ```javascript
+    async function generateTemplateWithRetry(prompt, area, maxRetries = 3) {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch('http://localhost:5055/api/generate-template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, area })
+          });
+
+          if (response.status === 502 && attempt < maxRetries - 1) {
+            // Exponential backoff: 1s, 2s, 4s, etc.
+            const delay = Math.pow(2, attempt) * 1000;
+            console.log(`Retrying after ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`API error: ${errorData.error}`);
+          }
+
+          return await response.json();
+        } catch (error) {
+          if (attempt === maxRetries - 1) throw error;
+        }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Input Validation">
+    Validate input before sending requests to avoid 400 errors:
+
+    ```javascript
+    function validateTemplateRequest(prompt, area) {
+      const errors = [];
+
+      // Validate prompt
+      if (!prompt) {
+        errors.push('El campo "prompt" es requerido');
+      } else if (typeof prompt !== 'string') {
+        errors.push('El campo "prompt" debe ser una cadena de texto');
+      } else if (prompt.trim().length === 0) {
+        errors.push('El campo "prompt" no puede estar vacío');
+      } else if (prompt.length > 1000) {
+        errors.push('El campo "prompt" excede el límite de 1000 caracteres');
+      }
+
+      // Validate area (optional but should be string if provided)
+      if (area !== undefined && typeof area !== 'string') {
+        errors.push('El campo "area" debe ser una cadena de texto');
+      }
+
+      return {
+        valid: errors.length === 0,
+        errors
+      };
+    }
+
+    // Usage
+    const validation = validateTemplateRequest(prompt, area);
+    if (!validation.valid) {
+      console.error('Validation errors:', validation.errors);
+      return;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Error Logging and Monitoring">
+    Implement comprehensive error logging for production:
+
+    ```javascript
+    class APIErrorLogger {
+      static log(error, context) {
+        const errorLog = {
+          timestamp: new Date().toISOString(),
+          statusCode: error.status,
+          errorType: error.error,
+          details: error.details,
+          context: {
+            prompt: context.prompt?.substring(0, 100), // Log first 100 chars only
+            area: context.area,
+            userId: context.userId,
+            requestId: context.requestId
+          }
+        };
+
+        // Send to logging service (e.g., Sentry, LogRocket, CloudWatch)
+        console.error('[API Error]', JSON.stringify(errorLog));
+
+        // Different handling based on error type
+        switch (error.status) {
+          case 400:
+            // Track validation errors to identify UX issues
+            this.trackMetric('validation_error');
+            break;
+          
+          case 502:
+            // Alert on Groq API failures
+            this.alertOpsTeam('Groq API failure', errorLog);
+            break;
+          
+          case 500:
+            // Critical server errors need immediate attention
+            this.alertOpsTeam('Server error', errorLog);
+            break;
+        }
+      }
+
+      static trackMetric(metric) {
+        // Implement metric tracking
+      }
+
+      static alertOpsTeam(title, details) {
+        // Implement alerting (e.g., PagerDuty, Slack)
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Prevention
+
+### Validate Request Payload
+
+Always ensure your request includes a valid `prompt`:
+
+```javascript
+const requestBody = {
+  prompt: 'Generar oficio de solicitud',  // Required, must be non-empty string
+  area: 'Dirección General'                // Optional, but recommended
+};
+```
+
+### Monitor Groq API Status
+
+<Warning>
+Before deploying to production, subscribe to Groq's status page to receive notifications about API outages or maintenance windows.
+</Warning>
+
+### Implement Health Checks
+
+Add a health check endpoint to monitor service availability:
+
+```javascript
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    groqApiConfigured: !!process.env.GROQ_API_KEY
+  });
+});
+```
+
+## Common Error Scenarios
+
+| Scenario | Status Code | Solution |
+|----------|-------------|----------|
+| Empty prompt sent | 400 | Validate input before sending request |
+| Invalid GROQ_API_KEY | 502 | Verify API key in environment variables |
+| Groq rate limit exceeded | 502 | Implement rate limiting (see [Rate Limits](/api/rate-limits)) |
+| Network timeout | 500 | Implement retry logic with exponential backoff |
+| Invalid JSON in request | 500 | Ensure proper JSON serialization |
+
+<Note>
+For questions about Groq API-specific errors, refer to the [Groq API documentation](https://console.groq.com/docs/api-reference).
+</Note>

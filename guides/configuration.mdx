@@ -1,0 +1,458 @@
+---
+title: 'Configuration Guide'
+description: 'Configure environment variables and customize the document generation system'
+---
+
+## Overview
+
+The Groq Microservice is designed to be simple yet flexible. This guide covers all configuration options, from environment variables to customizing the AI system prompt for your specific institutional needs.
+
+## Environment Variables
+
+The service uses environment variables stored in a `.env` file at the project root. These variables control authentication, server behavior, and operational settings.
+
+<Warning>
+  Never commit your `.env` file to version control. The `.gitignore` file already excludes it by default.
+</Warning>
+
+### Required Variables
+
+<AccordionGroup>
+  <Accordion title="GROQ_API_KEY">
+    **Type:** `string` (required)
+
+    Your Groq API authentication key for accessing the LLM API.
+
+    ```bash .env
+    GROQ_API_KEY=gsk_your_actual_api_key_here
+    ```
+
+    **Where to get it:**
+    1. Sign up at [console.groq.com](https://console.groq.com/)
+    2. Navigate to API Keys section
+    3. Create a new API key
+    4. Copy the key immediately (it won't be shown again)
+
+    **Security Notes:**
+    - Store this key securely
+    - Rotate keys periodically
+    - Use different keys for development and production
+    - Never expose in client-side code or logs
+
+    **Implementation in code:**
+    ```javascript server.js:33
+    headers: {
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      "Content-Type": "application/json",
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Optional Variables
+
+<AccordionGroup>
+  <Accordion title="PORT">
+    **Type:** `number` (optional)
+    
+    **Default:** `5055`
+
+    The port number on which the Express server will listen for incoming requests.
+
+    ```bash .env
+    PORT=5055
+    ```
+
+    **Common port configurations:**
+    - Development: `5055` (default)
+    - Production: `80` (HTTP), `443` (HTTPS), or `3000`
+    - Docker: Use environment variable passed at runtime
+
+    **Implementation in code:**
+    ```javascript server.js:56-58
+    app.listen(process.env.PORT || 5055, () => {
+      console.log(`Groq micro corriendo en http://localhost:${process.env.PORT || 5055}`);
+    });
+    ```
+
+    <Tip>
+      For production deployments behind a reverse proxy (nginx, Apache), use a non-privileged port like 5055 or 3000.
+    </Tip>
+  </Accordion>
+</AccordionGroup>
+
+## System Prompt Customization
+
+The `buildSystem()` function defines the AI's behavior and output format. This is the core of the document generation logic and is highly customizable.
+
+### Default System Prompt
+
+The default prompt is optimized for Mexican government institutional documents:
+
+```javascript server.js:9-16
+function buildSystem() {
+  return [
+    "Eres un asistente de redacción institucional para un Ayuntamiento en México.",
+    "Devuelve SOLO el texto final del machote (sin explicación).",
+    "Incluye: encabezado institucional, ASUNTO, lugar y fecha, cuerpo, cierre, ATENTAMENTE, firma y C.c.p.",
+    "Usa variables en formato {{Variable}} (doble llaves). No uses corchetes [] ni llaves simples.",
+  ].join(" ");
+}
+```
+
+### Understanding the Prompt Components
+
+<Steps>
+  <Step title="Identity and Role">
+    ```
+    "Eres un asistente de redacción institucional para un Ayuntamiento en México."
+    ```
+    
+    Defines the AI's role as an institutional writing assistant for Mexican municipal governments. This sets the tone, formality level, and cultural context.
+
+    **Customization options:**
+    - Change "Ayuntamiento" to your specific institution type (Secretaría, Dirección, etc.)
+    - Modify country/region for different administrative contexts
+    - Adjust formality level (formal, semi-formal)
+  </Step>
+
+  <Step title="Output Format Control">
+    ```
+    "Devuelve SOLO el texto final del machote (sin explicación)."
+    ```
+
+    Ensures the AI returns only the template text without explanations or meta-commentary.
+
+    <Info>
+      This prevents the AI from adding "Here's the template:" or "I've created..." prefixes.
+    </Info>
+  </Step>
+
+  <Step title="Document Structure Requirements">
+    ```
+    "Incluye: encabezado institucional, ASUNTO, lugar y fecha, cuerpo, cierre, ATENTAMENTE, firma y C.c.p."
+    ```
+
+    Specifies the mandatory sections of the document template. This ensures consistency across all generated documents.
+
+    **Required sections:**
+    - **encabezado institucional**: Institutional header
+    - **ASUNTO**: Subject line
+    - **lugar y fecha**: Location and date
+    - **cuerpo**: Main body content
+    - **cierre**: Closing statement
+    - **ATENTAMENTE**: Formal signature block
+    - **firma**: Signature line
+    - **C.c.p.**: Carbon copy recipients
+  </Step>
+
+  <Step title="Variable Formatting Rules">
+    ```
+    "Usa variables en formato {{Variable}} (doble llaves). No uses corchetes [] ni llaves simples."
+    ```
+
+    Enforces consistent variable syntax using double curly braces `{{Variable}}` instead of other formats.
+
+    **Why this matters:**
+    - Enables easy template variable replacement
+    - Compatible with common templating engines (Handlebars, Mustache)
+    - Prevents ambiguity with other bracket types
+
+    **Example variables in generated templates:**
+    - `{{NombreCompleto}}`
+    - `{{Cargo}}`
+    - `{{Dependencia}}`
+    - `{{FechaActual}}`
+  </Step>
+</Steps>
+
+### Customization Examples
+
+<CodeGroup>
+```javascript Federal Government
+function buildSystem() {
+  return [
+    "Eres un asistente de redacción institucional para una Secretaría Federal en México.",
+    "Devuelve SOLO el texto final del machote (sin explicación).",
+    "Incluye: membrete federal, ASUNTO, lugar y fecha, ANTECEDENTES, cuerpo, CONSIDERANDOS, resolutivos, ATENTAMENTE, SUFRAGIO EFECTIVO. NO REELECCIÓN, firma y C.c.p.",
+    "Usa variables en formato {{Variable}} (doble llaves). No uses corchetes [] ni llaves simples.",
+  ].join(" ");
+}
+```
+
+```javascript State Government
+function buildSystem() {
+  return [
+    "Eres un asistente de redacción institucional para un Gobierno Estatal en México.",
+    "Devuelve SOLO el texto final del machote (sin explicación).",
+    "Incluye: escudo estatal, SECRETARÍA, ASUNTO, número de oficio, lugar y fecha, cuerpo, cierre, ATENTAMENTE, firma, nombre y cargo, C.c.p.",
+    "Usa variables en formato {{Variable}} (doble llaves).",
+    "Aplica el tono formal característico de la administración pública estatal.",
+  ].join(" ");
+}
+```
+
+```javascript Academic Institution
+function buildSystem() {
+  return [
+    "Eres un asistente de redacción para una institución educativa en México.",
+    "Devuelve SOLO el texto final del machote (sin explicación).",
+    "Incluye: membrete institucional, número de oficio, ASUNTO, lugar y fecha, saludo, cuerpo, despedida, ATENTAMENTE, firma y sello.",
+    "Usa variables en formato {{Variable}} (doble llaves).",
+    "Mantén un tono cordial pero profesional apropiado para el ámbito educativo.",
+  ].join(" ");
+}
+```
+
+```javascript With JSON Output
+function buildSystem() {
+  return [
+    "Eres un asistente de redacción institucional para un Ayuntamiento en México.",
+    "Devuelve el resultado en formato JSON con la estructura: {template: string, variables: string[]}.",
+    "El template debe incluir: encabezado institucional, ASUNTO, lugar y fecha, cuerpo, cierre, ATENTAMENTE, firma y C.c.p.",
+    "En 'variables' lista todas las variables usadas en el formato {{Variable}}.",
+  ].join(" ");
+}
+```
+</CodeGroup>
+
+## LLM Model Configuration
+
+The service uses Groq's LLM API with configurable model and parameters.
+
+### Current Configuration
+
+```javascript server.js:36-40
+body: JSON.stringify({
+  model: "llama-3.1-8b-instant", // "llama-3.3-70b-versatile"
+  messages,
+  temperature: 0.4,
+})
+```
+
+### Model Options
+
+<AccordionGroup>
+  <Accordion title="llama-3.1-8b-instant (Default)">
+    **Characteristics:**
+    - Fast response times (< 1 second)
+    - Lower cost per request
+    - Good for straightforward template generation
+    - 8 billion parameters
+
+    **Best for:**
+    - High-volume production environments
+    - Standard document templates
+    - Cost-sensitive deployments
+    - Real-time user-facing applications
+  </Accordion>
+
+  <Accordion title="llama-3.3-70b-versatile (Alternative)">
+    **Characteristics:**
+    - Higher quality outputs
+    - Better understanding of complex requests
+    - Slightly slower response times
+    - 70 billion parameters
+
+    **Best for:**
+    - Complex document requirements
+    - Higher quality expectations
+    - Lower request volumes
+    - When response time is less critical
+
+    **How to switch:**
+    ```javascript server.js:36
+    model: "llama-3.3-70b-versatile",
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Temperature Setting
+
+```javascript server.js:39
+temperature: 0.4,
+```
+
+**Temperature:** `0.4` (range: 0.0 - 2.0)
+
+- **Current (0.4)**: Balanced between consistency and creativity
+- **Lower (0.1-0.3)**: More deterministic, conservative outputs
+- **Higher (0.6-0.9)**: More creative, varied responses
+
+<Note>
+  For institutional documents, we recommend keeping temperature between 0.2-0.5 to maintain professional consistency.
+</Note>
+
+## Request Configuration
+
+The API endpoint accepts requests with specific structure:
+
+```javascript server.js:25-28
+const messages = [
+  { role: "system", content: buildSystem() },
+  { role: "user", content: `Área: ${area || "No especificada"}\nSolicitud: ${prompt}` },
+];
+```
+
+### Customizing User Message Format
+
+You can modify how user input is formatted before sending to the LLM:
+
+<CodeGroup>
+```javascript Add Context Fields
+const messages = [
+  { role: "system", content: buildSystem() },
+  { 
+    role: "user", 
+    content: `Área: ${area || "No especificada"}
+Institución: ${institucion || "Ayuntamiento"}
+Nivel de urgencia: ${urgencia || "Normal"}
+Solicitud: ${prompt}` 
+  },
+];
+```
+
+```javascript Include Examples
+const messages = [
+  { role: "system", content: buildSystem() },
+  { 
+    role: "user", 
+    content: `Área: ${area || "No especificada"}
+Solicitud: ${prompt}
+
+Ejemplo de formato esperado:
+[Incluir ejemplo de template previo si está disponible]`
+  },
+];
+```
+
+```javascript Conditional Formatting
+const userContent = [
+  `Área: ${area || "No especificada"}`,
+  area?.toLowerCase() === 'legal' ? 'Incluir fundamento legal' : '',
+  `Solicitud: ${prompt}`
+].filter(Boolean).join('\n');
+
+const messages = [
+  { role: "system", content: buildSystem() },
+  { role: "user", content: userContent },
+];
+```
+</CodeGroup>
+
+## Middleware Configuration
+
+The service includes middleware for CORS and JSON parsing:
+
+### CORS Configuration
+
+```javascript server.js:6
+app.use(cors());
+```
+
+The default configuration allows all origins. For production, restrict to specific domains:
+
+<CodeGroup>
+```javascript Restrict Origins
+import cors from "cors";
+
+app.use(cors({
+  origin: [
+    'https://yourdomain.com',
+    'https://app.yourdomain.com'
+  ],
+  methods: ['POST'],
+  credentials: true
+}));
+```
+
+```javascript Environment-Based
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? 'https://yourdomain.com'
+    : '*',
+  methods: ['POST']
+}));
+```
+</CodeGroup>
+
+### JSON Body Parsing
+
+```javascript server.js:7
+app.use(express.json({ limit: "1mb" }));
+```
+
+**Limit:** `1mb` - Maximum request body size
+
+<Tip>
+  Increase the limit if you expect larger prompts:
+  ```javascript
+  app.use(express.json({ limit: "5mb" }));
+  ```
+</Tip>
+
+## Error Handling Configuration
+
+The endpoint includes comprehensive error handling:
+
+```javascript server.js:19-54
+try {
+  const { prompt, area } = req.body || {};
+  if (!prompt || typeof prompt !== "string") {
+    return res.status(400).json({ error: "prompt es requerido" });
+  }
+  
+  // API call...
+  
+  if (!r.ok) {
+    const details = await r.text();
+    return res.status(502).json({ error: "Groq error", details });
+  }
+  
+  // Success...
+} catch (e) {
+  return res.status(500).json({ error: "server error", details: String(e) });
+}
+```
+
+### Custom Error Messages
+
+You can customize error responses:
+
+```javascript
+if (!prompt || typeof prompt !== "string") {
+  return res.status(400).json({ 
+    error: "Solicitud inválida",
+    message: "El campo 'prompt' es requerido y debe ser texto",
+    code: "MISSING_PROMPT"
+  });
+}
+```
+
+## Environment-Specific Configuration
+
+Create multiple environment files for different deployments:
+
+```bash
+.env.development    # Local development
+.env.staging        # Staging environment
+.env.production     # Production environment
+```
+
+Load the appropriate file based on NODE_ENV:
+
+```javascript
+import dotenv from 'dotenv';
+
+const envFile = process.env.NODE_ENV === 'production' 
+  ? '.env.production' 
+  : '.env.development';
+
+dotenv.config({ path: envFile });
+```
+
+## Next Steps
+
+- Learn about [Deployment](/guides/deployment) strategies for production
+- Explore the [API Reference](/api/generate-template) for endpoint details
+- Review [Setup Guide](/guides/setup) for installation instructions

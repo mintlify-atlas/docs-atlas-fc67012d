@@ -1,0 +1,154 @@
+---
+title: 'Generate Template'
+api: 'POST /api/generate-template'
+description: 'Generate an institutional document template for Mexican government entities'
+---
+
+## Endpoint
+
+```
+POST /api/generate-template
+```
+
+Generates a formatted institutional document template (machote) based on the provided prompt and area. The template includes standard elements like institutional header, subject line, date/location, body, signature block, and cc field.
+
+## Request Body
+
+<ParamField body="prompt" type="string" required>
+  Description of the document to generate. This should specify the purpose and content of the institutional document.
+  
+  Example: `"Oficio de solicitud de material de oficina para el departamento"`
+</ParamField>
+
+<ParamField body="area" type="string">
+  The governmental area or department requesting the document. If not provided, defaults to "No especificada".
+  
+  Example: `"Recursos Humanos"`, `"Obras Públicas"`, `"Secretaría General"`
+</ParamField>
+
+## Response
+
+<ResponseField name="text" type="string">
+  The generated institutional document template. Contains the complete formatted document with variable placeholders in `{{Variable}}` format (double braces).
+  
+  The template includes:
+  - Institutional header
+  - ASUNTO (subject line)
+  - Place and date
+  - Document body
+  - Closing
+  - ATENTAMENTE
+  - Signature block
+  - C.c.p. (copy to)
+</ResponseField>
+
+## System Prompt
+
+The API uses a specialized system prompt that instructs the LLM to:
+
+- Act as an institutional writing assistant for a Mexican City Hall (Ayuntamiento)
+- Return ONLY the final template text (no explanations)
+- Include all standard institutional document elements
+- Use variables in `{{Variable}}` format with double braces (not brackets or single braces)
+
+This is implemented in server.js:9-16 via the `buildSystem()` function.
+
+## Examples
+
+### cURL
+
+```bash
+curl -X POST http://localhost:5055/api/generate-template \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Oficio de solicitud de material de oficina para el departamento",
+    "area": "Recursos Humanos"
+  }'
+```
+
+### JavaScript (fetch)
+
+```javascript
+const response = await fetch('http://localhost:5055/api/generate-template', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    prompt: 'Oficio de solicitud de material de oficina para el departamento',
+    area: 'Recursos Humanos'
+  })
+});
+
+const data = await response.json();
+console.log(data.text);
+```
+
+### Success Response
+
+```json
+{
+  "text": "AYUNTAMIENTO DE {{Municipio}}\n\nASUNTO: Solicitud de Material de Oficina\n\n{{Lugar}}, {{Fecha}}\n\n{{Destinatario}}\n{{Cargo}}\nPresente\n\nPor medio del presente, el Departamento de Recursos Humanos solicita...\n\nATENTAMENTE\n\n{{Firma}}\n{{Cargo}}\n\nC.c.p. {{Copia}}"
+}
+```
+
+## Error Responses
+
+<Expandable title="400 Bad Request">
+  Returned when the `prompt` parameter is missing or not a string.
+  
+  ```json
+  {
+    "error": "prompt es requerido"
+  }
+  ```
+  
+  **Cause**: Missing or invalid `prompt` in request body (server.js:21-23)
+</Expandable>
+
+<Expandable title="502 Bad Gateway">
+  Returned when the Groq API request fails.
+  
+  ```json
+  {
+    "error": "Groq error",
+    "details": "...error details from Groq API..."
+  }
+  ```
+  
+  **Cause**: Groq API returned a non-OK response (server.js:43-46)
+  
+  **Common reasons**:
+  - Invalid or missing `GROQ_API_KEY` environment variable
+  - Groq API rate limits exceeded
+  - Groq API service issues
+</Expandable>
+
+<Expandable title="500 Internal Server Error">
+  Returned when an unexpected server error occurs.
+  
+  ```json
+  {
+    "error": "server error",
+    "details": "...exception message..."
+  }
+  ```
+  
+  **Cause**: Unhandled exception during request processing (server.js:52)
+</Expandable>
+
+## Implementation Details
+
+The endpoint (server.js:18-54):
+
+1. Validates the `prompt` parameter is a string
+2. Constructs messages array with system prompt and user request
+3. Calls Groq's API with model `llama-3.1-8b-instant` and temperature `0.4`
+4. Extracts the generated text from `data.choices[0].message.content`
+5. Returns the trimmed text in the response
+
+## Model Configuration
+
+- **Model**: `llama-3.1-8b-instant`
+- **Temperature**: `0.4` (balanced between consistency and creativity)
+- **API**: Groq OpenAI-compatible endpoint

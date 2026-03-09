@@ -1,0 +1,822 @@
+---
+title: 'Deployment Guide'
+description: 'Deploy the Groq Microservice to production with best practices for security, reliability, and scalability'
+---
+
+## Overview
+
+This guide covers production deployment strategies for the Groq Microservice, including process management, containerization, environment security, monitoring, and cloud deployment options.
+
+<Warning>
+  Always test your deployment in a staging environment before going to production.
+</Warning>
+
+## Pre-Deployment Checklist
+
+Before deploying to production, ensure you've completed these steps:
+
+<Steps>
+  <Step title="Environment Variables">
+    ✅ Production `.env` file configured with valid `GROQ_API_KEY`
+    
+    ✅ Port configured appropriately (typically 3000, 5055, or behind reverse proxy)
+    
+    ✅ `.env` file excluded from version control (verify `.gitignore`)
+  </Step>
+
+  <Step title="Dependencies">
+    ✅ All production dependencies installed
+    
+    ✅ No dev dependencies in production bundle
+    
+    ✅ `package-lock.json` committed to ensure consistent installs
+  </Step>
+
+  <Step title="Code Quality">
+    ✅ Error handling tested for API failures
+    
+    ✅ CORS configured for production domains only
+    
+    ✅ Request size limits appropriate for your use case
+  </Step>
+
+  <Step title="Security">
+    ✅ HTTPS configured (using reverse proxy or load balancer)
+    
+    ✅ API key rotation policy in place
+    
+    ✅ Rate limiting implemented (if needed)
+  </Step>
+</Steps>
+
+## Process Management with PM2
+
+PM2 is a production-grade process manager for Node.js applications. It ensures your service stays running, restarts on crashes, and provides monitoring capabilities.
+
+### Installing PM2
+
+```bash
+npm install -g pm2
+```
+
+<Note>
+  Install PM2 globally with the `-g` flag so it's available system-wide.
+</Note>
+
+### Basic PM2 Deployment
+
+<Steps>
+  <Step title="Start the Service">
+    ```bash
+    pm2 start server.js --name groq-micro
+    ```
+
+    This starts your service as a background process named "groq-micro".
+  </Step>
+
+  <Step title="Configure Auto-Start on System Reboot">
+    ```bash
+    pm2 startup
+    pm2 save
+    ```
+
+    The `startup` command generates a startup script for your system, and `save` persists the current process list.
+  </Step>
+
+  <Step title="Verify Service is Running">
+    ```bash
+    pm2 status
+    ```
+
+    You should see:
+    ```
+    ┌─────┬──────────────┬─────────┬─────────┬──────────┐
+    │ id  │ name         │ status  │ cpu     │ memory   │
+    ├─────┼──────────────┼─────────┼─────────┼──────────┤
+    │ 0   │ groq-micro   │ online  │ 0.3%    │ 45.2mb   │
+    └─────┴──────────────┴─────────┴─────────┴──────────┘
+    ```
+  </Step>
+</Steps>
+
+### PM2 Ecosystem File (Recommended)
+
+Create a `ecosystem.config.js` file in your project root for advanced configuration:
+
+```javascript ecosystem.config.js
+module.exports = {
+  apps: [{
+    name: 'groq-micro',
+    script: 'server.js',
+    instances: 2,
+    exec_mode: 'cluster',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 5055
+    },
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    merge_logs: true,
+    autorestart: true,
+    max_restarts: 10,
+    min_uptime: '10s',
+    max_memory_restart: '500M',
+    watch: false
+  }]
+};
+```
+
+<AccordionGroup>
+  <Accordion title="Configuration Options Explained">
+    - **instances**: Number of processes (use `'max'` for CPU count)
+    - **exec_mode**: `'cluster'` for load balancing across instances
+    - **env**: Environment variables (API key should still be in `.env` file)
+    - **error_file/out_file**: Log file locations
+    - **autorestart**: Automatically restart on crashes
+    - **max_memory_restart**: Restart if memory exceeds threshold
+    - **watch**: Enable to restart on file changes (disable in production)
+  </Accordion>
+</AccordionGroup>
+
+Start using the ecosystem file:
+
+```bash
+pm2 start ecosystem.config.js
+```
+
+### PM2 Management Commands
+
+<CodeGroup>
+```bash Monitoring
+# View real-time logs
+pm2 logs groq-micro
+
+# Monitor CPU and memory
+pm2 monit
+
+# View detailed info
+pm2 show groq-micro
+
+# Web-based monitoring
+pm2 plus
+```
+
+```bash Control
+# Restart the service
+pm2 restart groq-micro
+
+# Stop the service
+pm2 stop groq-micro
+
+# Reload (zero-downtime restart)
+pm2 reload groq-micro
+
+# Delete from PM2
+pm2 delete groq-micro
+```
+
+```bash Scaling
+# Scale to 4 instances
+pm2 scale groq-micro 4
+
+# Scale to CPU count
+pm2 start server.js -i max
+```
+</CodeGroup>
+
+<Tip>
+  Use `pm2 reload` instead of `pm2 restart` for zero-downtime deployments when running in cluster mode.
+</Tip>
+
+## Docker Deployment
+
+Containerizing your application with Docker ensures consistent environments across development, staging, and production.
+
+### Dockerfile
+
+Create a `Dockerfile` in your project root:
+
+```dockerfile Dockerfile
+# Use official Node.js LTS image
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install production dependencies only
+RUN npm ci --only=production
+
+# Copy application code
+COPY server.js .
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Change ownership
+RUN chown -R nodejs:nodejs /app
+
+# Switch to non-root user
+USER nodejs
+
+# Expose port
+EXPOSE 5055
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:5055/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });"
+
+# Start the application
+CMD ["node", "server.js"]
+```
+
+### Docker Compose (Optional)
+
+Create `docker-compose.yml` for easier management:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  groq-micro:
+    build: .
+    container_name: groq-microservice
+    restart: unless-stopped
+    ports:
+      - "5055:5055"
+    environment:
+      - NODE_ENV=production
+      - PORT=5055
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5055/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+```
+
+### Building and Running
+
+<Steps>
+  <Step title="Build Docker Image">
+    ```bash
+    docker build -t groq-micro:latest .
+    ```
+  </Step>
+
+  <Step title="Run Container">
+    ```bash
+    # Using docker run
+    docker run -d \
+      --name groq-micro \
+      -p 5055:5055 \
+      --env-file .env \
+      --restart unless-stopped \
+      groq-micro:latest
+
+    # OR using docker-compose
+    docker-compose up -d
+    ```
+  </Step>
+
+  <Step title="Verify Container is Running">
+    ```bash
+    docker ps
+    docker logs groq-micro
+    ```
+  </Step>
+</Steps>
+
+### Docker Management Commands
+
+```bash
+# View logs
+docker logs -f groq-micro
+
+# Stop container
+docker stop groq-micro
+
+# Restart container
+docker restart groq-micro
+
+# Remove container
+docker rm -f groq-micro
+
+# View container stats
+docker stats groq-micro
+```
+
+<Warning>
+  Never include your `.env` file in the Docker image. Always pass environment variables at runtime using `--env-file` or `env_file` in docker-compose.
+</Warning>
+
+## Environment Variable Security
+
+Protecting your API keys and sensitive configuration is critical for production deployments.
+
+### Best Practices
+
+<AccordionGroup>
+  <Accordion title="1. Never Commit .env Files">
+    Verify your `.gitignore` excludes environment files:
+
+    ```bash .gitignore
+    node_modules/
+    .env
+    .env.*
+    !.env.example
+    ```
+
+    Check git status to ensure `.env` is ignored:
+    ```bash
+    git status --ignored
+    ```
+  </Accordion>
+
+  <Accordion title="2. Use Environment-Specific Files">
+    Maintain separate environment files:
+
+    ```bash
+    .env.example           # Template (commit this)
+    .env.development       # Local dev (don't commit)
+    .env.staging          # Staging (don't commit)
+    .env.production       # Production (don't commit)
+    ```
+
+    Store production `.env` on the server only, never in version control.
+  </Accordion>
+
+  <Accordion title="3. Restrict File Permissions">
+    On Linux/Unix servers, restrict `.env` file access:
+
+    ```bash
+    # Owner can read/write, no other access
+    chmod 600 .env
+
+    # Verify permissions
+    ls -la .env
+    # Should show: -rw------- 1 user group
+    ```
+  </Accordion>
+
+  <Accordion title="4. Use Secret Management Services">
+    For enhanced security, use dedicated secret management:
+
+    **Cloud Providers:**
+    - AWS Secrets Manager
+    - Google Cloud Secret Manager
+    - Azure Key Vault
+
+    **Self-Hosted:**
+    - HashiCorp Vault
+    - Docker Secrets (Swarm mode)
+    - Kubernetes Secrets
+
+    **Example with AWS Secrets Manager:**
+    ```javascript
+    import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+
+    const client = new SecretsManagerClient({ region: "us-east-1" });
+    const response = await client.send(
+      new GetSecretValueCommand({ SecretId: "groq-api-key" })
+    );
+    const GROQ_API_KEY = response.SecretString;
+    ```
+  </Accordion>
+
+  <Accordion title="5. Rotate API Keys Regularly">
+    Implement a key rotation schedule:
+
+    1. Generate new API key in Groq console
+    2. Update `.env` file with new key
+    3. Restart service: `pm2 restart groq-micro`
+    4. Verify service is working
+    5. Revoke old key in Groq console
+
+    <Tip>
+      Schedule key rotation every 90 days for production systems.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="6. Audit and Monitor">
+    - Enable API usage monitoring in Groq console
+    - Set up alerts for unusual activity
+    - Log API errors (without exposing keys)
+    - Review access logs regularly
+  </Accordion>
+</AccordionGroup>
+
+## Reverse Proxy Configuration
+
+In production, run your Node.js service behind a reverse proxy (nginx or Apache) for SSL termination, load balancing, and security.
+
+### Nginx Configuration
+
+```nginx /etc/nginx/sites-available/groq-micro
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+
+    # Redirect HTTP to HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.yourdomain.com;
+
+    # SSL certificates (use Let's Encrypt)
+    ssl_certificate /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
+
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Request size limit
+    client_max_body_size 2M;
+
+    # Proxy to Node.js service
+    location / {
+        proxy_pass http://localhost:5055;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
+```
+
+Enable the configuration:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/groq-micro /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+<Info>
+  Use [Certbot](https://certbot.eff.org/) to automatically obtain and renew free SSL certificates from Let's Encrypt.
+</Info>
+
+## Cloud Platform Deployments
+
+### AWS (Elastic Beanstalk)
+
+<Steps>
+  <Step title="Install EB CLI">
+    ```bash
+    pip install awsebcli
+    ```
+  </Step>
+
+  <Step title="Initialize EB Application">
+    ```bash
+    eb init -p node.js-18 groq-micro
+    ```
+  </Step>
+
+  <Step title="Create Environment">
+    ```bash
+    eb create production-env
+    ```
+  </Step>
+
+  <Step title="Set Environment Variables">
+    ```bash
+    eb setenv GROQ_API_KEY=your_key_here PORT=8080
+    ```
+  </Step>
+
+  <Step title="Deploy">
+    ```bash
+    eb deploy
+    ```
+  </Step>
+</Steps>
+
+### Google Cloud Run
+
+<Steps>
+  <Step title="Build and Push Image">
+    ```bash
+    gcloud builds submit --tag gcr.io/PROJECT_ID/groq-micro
+    ```
+  </Step>
+
+  <Step title="Deploy to Cloud Run">
+    ```bash
+    gcloud run deploy groq-micro \
+      --image gcr.io/PROJECT_ID/groq-micro \
+      --platform managed \
+      --region us-central1 \
+      --set-env-vars GROQ_API_KEY=your_key_here
+    ```
+  </Step>
+</Steps>
+
+### Digital Ocean App Platform
+
+1. Connect your Git repository
+2. Select Node.js as runtime
+3. Set build command: `npm install`
+4. Set run command: `node server.js`
+5. Add environment variable: `GROQ_API_KEY`
+6. Deploy
+
+### Heroku
+
+```bash
+# Login to Heroku
+heroku login
+
+# Create app
+heroku create groq-micro
+
+# Set environment variables
+heroku config:set GROQ_API_KEY=your_key_here
+
+# Deploy
+git push heroku main
+
+# Scale dynos
+heroku ps:scale web=1
+```
+
+## Monitoring and Logging
+
+### Application Logging
+
+Enhance the server with structured logging:
+
+```javascript
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' })
+  ]
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple()
+  }));
+}
+
+// Use in endpoint
+logger.info('Template generated', { area, promptLength: prompt.length });
+```
+
+### Health Check Endpoint
+
+Add a health check endpoint for monitoring:
+
+```javascript server.js
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy', 
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+```
+
+### Monitoring Services
+
+<AccordionGroup>
+  <Accordion title="PM2 Plus">
+    Real-time monitoring for PM2-managed applications:
+    ```bash
+    pm2 plus
+    ```
+    Provides dashboards, alerts, and performance metrics.
+  </Accordion>
+
+  <Accordion title="New Relic">
+    APM solution for Node.js:
+    ```bash
+    npm install newrelic
+    ```
+    Follow New Relic setup for Node.js applications.
+  </Accordion>
+
+  <Accordion title="DataDog">
+    Infrastructure and application monitoring:
+    ```bash
+    npm install dd-trace
+    ```
+    Configure DataDog agent on your server.
+  </Accordion>
+
+  <Accordion title="Sentry">
+    Error tracking and monitoring:
+    ```bash
+    npm install @sentry/node
+    ```
+    Initialize Sentry in your application for error tracking.
+  </Accordion>
+</AccordionGroup>
+
+## Performance Optimization
+
+### Enable Compression
+
+```javascript
+import compression from 'compression';
+
+app.use(compression());
+```
+
+### Rate Limiting
+
+```javascript
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Demasiadas solicitudes, intenta más tarde'
+});
+
+app.use('/api/', limiter);
+```
+
+### Request Timeout
+
+```javascript
+import timeout from 'connect-timeout';
+
+app.use(timeout('30s'));
+app.use((req, res, next) => {
+  if (!req.timedout) next();
+});
+```
+
+## Backup and Disaster Recovery
+
+<Steps>
+  <Step title="Backup Strategy">
+    - Store `.env` file in secure password manager
+    - Document all environment variables
+    - Keep infrastructure as code (Docker, terraform)
+    - Regular code backups in version control
+  </Step>
+
+  <Step title="Rollback Plan">
+    With PM2:
+    ```bash
+    pm2 deploy production revert 1
+    ```
+
+    With Docker:
+    ```bash
+    docker run -d groq-micro:previous-version
+    ```
+  </Step>
+
+  <Step title="Incident Response">
+    1. Monitor logs for errors
+    2. Check Groq API status
+    3. Verify environment variables
+    4. Review recent deployments
+    5. Rollback if necessary
+  </Step>
+</Steps>
+
+## Security Hardening
+
+<AccordionGroup>
+  <Accordion title="Use Helmet.js">
+    ```bash
+    npm install helmet
+    ```
+
+    ```javascript
+    import helmet from 'helmet';
+    app.use(helmet());
+    ```
+  </Accordion>
+
+  <Accordion title="Implement Authentication">
+    Add API key authentication for your endpoint:
+
+    ```javascript
+    app.use('/api/', (req, res, next) => {
+      const apiKey = req.headers['x-api-key'];
+      if (apiKey !== process.env.SERVICE_API_KEY) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      next();
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Input Validation">
+    ```bash
+    npm install express-validator
+    ```
+
+    ```javascript
+    import { body, validationResult } from 'express-validator';
+
+    app.post('/api/generate-template', [
+      body('prompt').isString().isLength({ min: 1, max: 5000 }),
+      body('area').optional().isString().isLength({ max: 200 })
+    ], async (req, res) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+      // Continue with request...
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting Production Issues
+
+<AccordionGroup>
+  <Accordion title="Service Won't Start">
+    Check logs:
+    ```bash
+    pm2 logs groq-micro --lines 100
+    # or
+    docker logs groq-micro
+    ```
+
+    Common issues:
+    - Missing `GROQ_API_KEY` in environment
+    - Port already in use
+    - Insufficient permissions
+    - Node.js version mismatch
+  </Accordion>
+
+  <Accordion title="API Requests Failing">
+    1. Verify Groq API key is valid
+    2. Check Groq API status
+    3. Review error logs for details
+    4. Test with curl directly
+    5. Verify network connectivity
+  </Accordion>
+
+  <Accordion title="High Memory Usage">
+    ```bash
+    # Check memory usage
+    pm2 monit
+    
+    # Restart with memory limit
+    pm2 restart groq-micro --max-memory-restart 500M
+    ```
+  </Accordion>
+
+  <Accordion title="Slow Response Times">
+    - Check Groq API latency
+    - Review LLM model choice (8b-instant vs 70b-versatile)
+    - Monitor CPU usage
+    - Consider scaling to multiple instances
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Review [Configuration Guide](/guides/configuration) for customization options
+- Check [API Reference](/api/generate-template) for endpoint documentation
+- Explore [Setup Guide](/guides/setup) for development environment
+
+<Tip>
+  Always test deployments in a staging environment before pushing to production.
+</Tip>
