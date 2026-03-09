@@ -1,0 +1,62 @@
+{
+  "projectType": "api-service",
+  "projectName": "Groq Microservice",
+  "projectDescription": "A lightweight Express microservice that generates institutional document templates using Groq's LLM API for Mexican government entities.",
+  "theme": "aspen",
+  "primaryColor": "#F55036",
+  "lightColor": "#FF6B52",
+  "darkColor": "#D43E28",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/setup",
+              "guides/configuration",
+              "guides/deployment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/overview",
+              "api/generate-template"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "api/error-handling",
+              "api/rate-limits"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-powered institutional document generation",
+    "Integration with Groq LLM API",
+    "RESTful API endpoint for template generation",
+    "Support for variable placeholders in templates",
+    "Area-specific document customization"
+  ],
+  "publicApiSurface": [
+    "POST /api/generate-template"
+  ]
+}
